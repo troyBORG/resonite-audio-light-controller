@@ -44,6 +44,21 @@ CodeCoverage/
 # MSBuild Binary and Structured Log
 *.binlog
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+.env
+*.egg-info/
+.eggs/
+
+# Config with secrets
+config.yaml
+
 # MSTest test Results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
