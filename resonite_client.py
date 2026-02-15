@@ -23,8 +23,10 @@ LIGHT_TYPE_POINT = "Point"
 SPHERE_MESH = "[FrooxEngine]FrooxEngine.SphereMesh"
 PBS_METALLIC = "[FrooxEngine]FrooxEngine.PBS_Metallic"
 MESH_RENDERER = "[FrooxEngine]FrooxEngine.MeshRenderer"
-# Default bulb scale (sphere radius ~0.5 so this gives ~0.1m)
-LIGHT_VISUAL_SCALE = 0.2
+# Bulb sphere: radius 0.1, segments 4, rings 2
+SPHERE_RADIUS = 0.1
+SPHERE_SEGMENTS = 4
+SPHERE_RINGS = 2
 
 
 def _ref(target_id: str) -> dict:
@@ -206,7 +208,7 @@ class ResoniteClient:
                     "parent": _ref(root_id),
                     "name": _str_val(f"Light_{ld.zone.value}_{ld.zone_index}"),
                     "position": _float3(x, y, z),
-                    "scale": _float3(LIGHT_VISUAL_SCALE, LIGHT_VISUAL_SCALE, LIGHT_VISUAL_SCALE),
+                    "scale": _float3(1, 1, 1),
                 },
             })
             self._check_response(r, "addSlot", slot_id)
@@ -236,7 +238,15 @@ class ResoniteClient:
             r = await self._send({
                 "$type": "addComponent",
                 "containerSlotId": slot_id,
-                "data": {"id": mesh_id, "componentType": SPHERE_MESH, "members": {}},
+                "data": {
+                    "id": mesh_id,
+                    "componentType": SPHERE_MESH,
+                    "members": {
+                        "Radius": _float_val(SPHERE_RADIUS),
+                        "Segments": _int_val(SPHERE_SEGMENTS),
+                        "Rings": _int_val(SPHERE_RINGS),
+                    },
+                },
             })
             self._check_response(r, "addComponent", mesh_id)
 

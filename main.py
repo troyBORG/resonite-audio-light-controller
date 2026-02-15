@@ -127,7 +127,7 @@ async def run(
             if pulse_source_available():
                 audio = PulseSource(str(audio_pulse_source), sample_rate, chunk_size)
             else:
-                print("audio_pulse_source is set but 'ffmpeg' not found. Install ffmpeg.")
+                print("audio_pulse_source is set but neither 'pw-record' nor 'ffmpeg' found. Install pipewire or ffmpeg.")
                 await client.teardown()
                 await client.disconnect()
                 sys.exit(1)
@@ -147,12 +147,16 @@ async def run(
     else:
         print("Audio: none (demo mode – no music reaction; run without --demo for audio-reactive lights)")
 
+    zone_mix_sets = config.get("zone_mix_sets")
+    zone_cycle_seconds = float(config.get("zone_cycle_seconds", 14))
     pattern_engine = PatternEngine(
         layout,
         chase_tail=chase_tail,
         rotation_enabled=rotation_enabled,
         rotation_speed=rotation_speed,
         rotation_audio_boost=rotation_audio_boost,
+        zone_mix_sets=zone_mix_sets,
+        zone_cycle_seconds=zone_cycle_seconds,
     )
     interval = 1.0 / update_rate
 

@@ -7,6 +7,7 @@ from enum import Enum
 
 from audio_engine import (
     FrequencyBands,
+    bands_to_hue,
     energy_to_color,
     hue_to_rgb,
     rgb_to_hue,
@@ -22,6 +23,8 @@ class Pattern(Enum):
     BACK_TO_FRONT = "back_to_front"
     LEFT_OFF = "left_off"
     RIGHT_OFF = "right_off"
+    LEFT_RIGHT_ALT = "left_right_alt"      # left and right zones alternate pulsing
+    CENTER_OUT = "center_out"              # within each zone: middle lights first, expand outward
     UPPER_BASS = "upper_bass"
     BASS_FLOOD = "bass_flood"      # low freq drives brightness (flood lights)
     TREBLE_HUE = "treble_hue"      # high freq drives hue shift
@@ -29,6 +32,8 @@ class Pattern(Enum):
     MUSIC_COLOR = "music_color"
     BREATHING = "breathing"
     ALL_ON = "all_on"
+    ZONE_MIX = "zone_mix"          # different pattern per zone, cycles over time
+    BEAT_HUE = "beat_hue"          # hue jumps on beat detection; intensity pulses with bass
 
 
 @dataclass
@@ -51,6 +56,14 @@ class PatternEngine:
     Generates LightState for each light based on pattern and audio.
     """
 
+    # Default zone mix sets: cycle these so top/sides do different things
+    DEFAULT_ZONE_MIX_SETS = [
+        {"top": "chase", "left": "left_off", "right": "right_off", "front": "bass_flood", "back": "center_out", "bottom": "bass_flood"},
+        {"top": "center_out", "left": "chase", "right": "chase", "front": "left_right_alt", "back": "music_color", "bottom": "music_color"},
+        {"top": "swirl", "left": "bass_flood", "right": "bass_flood", "front": "center_out", "back": "left_off", "bottom": "left_right_alt"},
+        {"top": "music_color", "left": "left_right_alt", "right": "left_right_alt", "front": "chase", "back": "right_off", "bottom": "center_out"},
+    ]
+
     def __init__(
         self,
         layout: LightLayout,
@@ -58,13 +71,36 @@ class PatternEngine:
         rotation_enabled: bool = False,
         rotation_speed: float = 30.0,
         rotation_audio_boost: bool = True,
+        zone_mix_sets: list[dict] | None = None,
+        zone_cycle_seconds: float = 14.0,
     ):
         self.layout = layout
         self.chase_tail = chase_tail
         self.rotation_enabled = rotation_enabled
         self.rotation_speed = rotation_speed  # deg/sec
         self.rotation_audio_boost = rotation_audio_boost
+        self.zone_mix_sets = zone_mix_sets or self.DEFAULT_ZONE_MIX_SETS
+        self.zone_cycle_seconds = zone_cycle_seconds
         self._start_time = time.perf_counter()
+        # Beat detection state
+        self._prev_bass = 0.0
+        self._beat_hue = 0.0
+        self._last_beat_time = 0.0
+        self._beat_cooldown = 0.15  # min seconds between beats
+
+    def _detect_beat(self, bands: FrequencyBands | None) -> bool:
+        """Return True if a beat (bass/upper_bass spike) was detected this frame."""
+        if not bands:
+            return False
+        bass = getattr(bands, "upper_bass", bands.low)
+        t = time.perf_counter() - self._start_time
+        # Beat = sharp rise and we're past cooldown
+        rise = bass - self._prev_bass
+        self._prev_bass = bass
+        if rise > 0.25 and (t - self._last_beat_time) >= self._beat_cooldown and bass > 0.3:
+            self._last_beat_time = t
+            return True
+        return False
 
     def _phase(self, speed: float = 1.0) -> float:
         """Oscillating phase 0-1 based on time."""
@@ -123,6 +159,49 @@ class PatternEngine:
             return 0.0
         return 1.0
 
+    def _left_right_alt_intensity(
+        self, ld: LightDescriptor, phase: float, bands: FrequencyBands | None
+    ) -> float:
+        """
+        Left and right zones alternate: left on when phase 0-0.5, right on 0.5-1.
+        Front/back/top/bottom pulse with overall or split (left half vs right half by zone).
+        """
+        if ld.zone == Zone.LEFT:
+            return 1.0 if phase < 0.5 else 0.0
+        if ld.zone == Zone.RIGHT:
+            return 0.0 if phase < 0.5 else 1.0
+        # Front/back/top/bottom: left half of zone = left phase, right half = right phase
+        mid = ld.zone_count / 2
+        on_left_phase = phase < 0.5
+        on_right_phase = phase >= 0.5
+        if ld.zone_index < mid:
+            base = 1.0 if on_left_phase else 0.0
+        else:
+            base = 1.0 if on_right_phase else 0.0
+        if bands:
+            base *= 0.4 + 0.6 * bands.overall
+        return base
+
+    def _center_out_intensity(
+        self, ld: LightDescriptor, phase: float, bands: FrequencyBands | None
+    ) -> float:
+        """
+        Within each zone: middle 2 lights on first, expand outward by 1 each side.
+        Phase 0 = center 2; phase 0.2 = middle 4; ... phase 1 = full zone.
+        """
+        if ld.zone_count <= 0:
+            return 0.0
+        center = (ld.zone_count - 1) / 2.0
+        dist_from_center = abs(ld.zone_index - center)
+        max_radius = center + 0.5  # full zone
+        min_radius = 0.5  # middle 2 lights
+        if bands:
+            phase = (phase * 0.7 + 0.3 * getattr(bands, "upper_bass", bands.low)) % 1.0
+        lit_radius = min_radius + phase * (max_radius - min_radius)
+        if dist_from_center <= lit_radius:
+            return max(0.0, 1.0 - (dist_from_center / max(lit_radius, 0.01)) * 0.3)
+        return 0.0
+
     def _swirl_intensity(
         self, ld: LightDescriptor, phase: float, tail_len: int, bands: FrequencyBands | None
     ) -> float:
@@ -153,8 +232,8 @@ class PatternEngine:
         t = time.perf_counter() - self._start_time
         # Soft sine for intensity (breath in/out)
         breath = 0.4 + 0.6 * (0.5 + 0.5 * math.sin(t * 2 * math.pi * breath_rate))
-        # Subtle hue shift over time (±0.06)
-        hue_shift = 0.06 * math.sin(t * 0.5)
+        # Hue drifts slowly through full spectrum (not stuck in red/orange)
+        hue_shift = (t * 0.12) % 1.0
         base_hue = rgb_to_hue(base_color[0], base_color[1], base_color[2])
         hue = (base_hue + hue_shift) % 1.0
         color = hue_to_rgb(hue, 0.85, 0.9)
@@ -187,12 +266,16 @@ class PatternEngine:
         if n == 0:
             return []
 
-        # Music-reactive color
+        # Music-reactive color - spread across full spectrum (not just red/orange)
+        t = time.perf_counter() - self._start_time
+        time_hue = (t * 0.08) % 1.0  # slow drift through spectrum
         if bands:
-            base_hue = bands.overall * 0.5
+            band_hue = bands_to_hue(bands)  # low=red, mid=green, high=blue
+            base_hue = (band_hue * 0.6 + time_hue * 0.4) % 1.0
             music_color = energy_to_color(bands.mid, base_hue)
         else:
-            music_color = _base_color()
+            base_hue = time_hue
+            music_color = energy_to_color(0.6, base_hue)
 
         rotation_y = self._rotation_y(bands)
 
@@ -207,49 +290,73 @@ class PatternEngine:
                 for _ in self.layout.iter_lights()
             ]
 
+        # ZONE_MIX: different pattern per zone, cycling sets over time
+        if pattern == Pattern.ZONE_MIX:
+            t = time.perf_counter() - self._start_time
+            set_idx = int(t / self.zone_cycle_seconds) % max(1, len(self.zone_mix_sets))
+            zone_set = self.zone_mix_sets[set_idx]
+
         for ld in self.layout.iter_lights():
             intensity = 0.0
-            color = music_color
+            # Per-light hue offset so adjacent lights vary (rainbow spread)
+            light_hue_offset = (ld.global_index / max(n, 1)) * 0.2
+            base_hue_adj = (base_hue + light_hue_offset) % 1.0
+            color = energy_to_color(bands.mid if bands else 0.6, base_hue_adj)
 
-            if pattern == Pattern.CHASE:
+            # For ZONE_MIX, use zone's pattern from current set
+            p = pattern
+            if pattern == Pattern.ZONE_MIX:
+                zone_pattern_str = zone_set.get(ld.zone.value, "bass_flood")
+                try:
+                    p = Pattern(zone_pattern_str)
+                except ValueError:
+                    p = Pattern.BASS_FLOOD
+
+            if p == Pattern.CHASE:
                 intensity = self._chase_intensity(ld, phase, self.chase_tail, False)
-            elif pattern == Pattern.CHASE_REVERSE:
+            elif p == Pattern.CHASE_REVERSE:
                 intensity = self._chase_intensity(ld, phase, self.chase_tail, True)
-            elif pattern == Pattern.FRONT_TO_BACK:
+            elif p == Pattern.FRONT_TO_BACK:
                 intensity = self._front_to_back_intensity(ld, phase, False)
-            elif pattern == Pattern.BACK_TO_FRONT:
+            elif p == Pattern.BACK_TO_FRONT:
                 intensity = self._front_to_back_intensity(ld, phase, True)
-            elif pattern == Pattern.LEFT_OFF:
+            elif p == Pattern.LEFT_OFF:
                 intensity = self._left_off_intensity(ld)
-            elif pattern == Pattern.RIGHT_OFF:
+            elif p == Pattern.RIGHT_OFF:
                 intensity = self._right_off_intensity(ld)
-            elif pattern == Pattern.SWIRL:
+            elif p == Pattern.LEFT_RIGHT_ALT:
+                intensity = self._left_right_alt_intensity(ld, phase, bands)
+            elif p == Pattern.CENTER_OUT:
+                intensity = self._center_out_intensity(ld, phase, bands)
+            elif p == Pattern.SWIRL:
                 intensity = self._swirl_intensity(ld, phase, self.chase_tail, bands)
-            elif pattern == Pattern.UPPER_BASS:
-                # All lights pulse with upper bass (60-150 Hz)
+            elif p == Pattern.UPPER_BASS:
                 intensity = 0.3 + 0.7 * (getattr(bands, "upper_bass", bands.low) if bands else 0.5)
-            elif pattern == Pattern.BASS_FLOOD:
-                # Low freq drives brightness, like flood lights (discovery: "low frequencies might drive brightness")
+            elif p == Pattern.BASS_FLOOD:
                 intensity = 0.2 + 0.8 * (bands.low if bands else 0.5)
-            elif pattern == Pattern.TREBLE_HUE:
-                # High freq drives hue; intensity from overall (discovery: "high frequencies control hue")
-                hue = 0.5 + 0.5 * (bands.high if bands else 0.5)
-                color = energy_to_color(1.0, hue)
+            elif p == Pattern.TREBLE_HUE:
+                hue = bands_to_hue(bands) if bands else time_hue
+                color = energy_to_color(1.0, (hue + light_hue_offset) % 1.0)
                 intensity = 0.5 + 0.5 * (bands.overall if bands else 0.5)
-            elif pattern == Pattern.BAND_SPLIT:
-                # Bass→intensity, treble→hue (classic audio-driven mapping from discovery)
+            elif p == Pattern.BAND_SPLIT:
                 intensity = 0.3 + 0.7 * (bands.low if bands else 0.5)
-                hue = 0.5 + 0.5 * (bands.high if bands else 0.5)
-                color = energy_to_color(0.8, hue)
-            elif pattern == Pattern.MUSIC_COLOR:
-                # All on, color from music
+                hue = bands_to_hue(bands) if bands else time_hue
+                color = energy_to_color(0.8, (hue + light_hue_offset) % 1.0)
+            elif p == Pattern.MUSIC_COLOR:
                 intensity = 0.5 + 0.5 * (bands.overall if bands else 0.5)
-            elif pattern == Pattern.ALL_ON:
+            elif p == Pattern.ALL_ON:
                 intensity = 1.0
+            elif p == Pattern.BEAT_HUE:
+                beat = self._detect_beat(bands)
+                if beat:
+                    self._beat_hue = (self._beat_hue + 0.2) % 1.0
+                hue = (self._beat_hue + light_hue_offset * 0.5) % 1.0
+                color = energy_to_color(0.9, hue)
+                intensity = 0.3 + 0.7 * (getattr(bands, "low", 0.5) if bands else 0.5)
 
             # Boost intensity with bass for most patterns
-            no_bass_boost = (Pattern.LEFT_OFF, Pattern.RIGHT_OFF, Pattern.UPPER_BASS, Pattern.BASS_FLOOD, Pattern.BAND_SPLIT)
-            if bands and pattern not in no_bass_boost:
+            no_bass_boost = (Pattern.LEFT_OFF, Pattern.RIGHT_OFF, Pattern.LEFT_RIGHT_ALT, Pattern.CENTER_OUT, Pattern.UPPER_BASS, Pattern.BASS_FLOOD, Pattern.BAND_SPLIT, Pattern.BEAT_HUE)
+            if bands and p not in no_bass_boost:
                 intensity = min(1.0, intensity * (0.7 + 0.3 * bands.low))
 
             states.append(

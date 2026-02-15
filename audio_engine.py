@@ -63,8 +63,8 @@ def fft_frequency_bands(
 
 
 def energy_to_hue(energy: float, base_hue: float = 0.0) -> float:
-    """Map energy (0-1) to hue shift. Returns hue in 0-1 (maps to 0-360°)."""
-    return (base_hue + energy * 0.3) % 1.0
+    """Map energy (0-1) to hue. base_hue + energy spans wider spectrum for color variety."""
+    return (base_hue + energy * 0.7) % 1.0
 
 
 def rgb_to_hue(r: float, g: float, b: float) -> float:
@@ -105,9 +105,20 @@ def hue_to_rgb(hue: float, saturation: float = 1.0, value: float = 1.0) -> tuple
 def energy_to_color(energy: float, base_hue: float = 0.0) -> tuple[float, float, float]:
     """Map energy to RGB color for lighting. Returns (r, g, b) in 0-1."""
     hue = energy_to_hue(energy, base_hue)
-    saturation = 0.9
-    value = 0.3 + 0.7 * energy
+    saturation = 0.85
+    value = 0.35 + 0.65 * energy
     return hue_to_rgb(hue, saturation, value)
+
+
+def bands_to_hue(bands: "FrequencyBands") -> float:
+    """Map frequency bands to hue across full spectrum: low=red, mid=green, high=blue."""
+    # Low=0, Mid=0.33, High=0.66, blend by energy
+    low_w = bands.low
+    mid_w = bands.mid
+    high_w = bands.high
+    total = low_w + mid_w + high_w + 1e-6
+    hue = (0.0 * low_w + 0.33 * mid_w + 0.66 * high_w) / total
+    return hue % 1.0
 
 
 def lerp(a: float, b: float, t: float) -> float:

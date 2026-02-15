@@ -110,6 +110,10 @@ Copy `config.example.yaml` to `config.yaml` only if you want to customize. Defau
 | `music_color` | All on, color from spectrum |
 | `front_to_back` / `back_to_front` | Wave across zones |
 | `left_off` / `right_off` | Half room on, half off |
+| `left_right_alt` | Left and right zones alternate pulsing |
+| `center_out` | Within each zone: middle lights first, expand outward (great for top rows) |
+| `zone_mix` | Different pattern per zone; cycles through sets every 14s (top=chase, left=off, etc.) |
+| `beat_hue` | Hue jumps on beat detection (bass spike); intensity pulses with bass |
 
 ## Implementation Notes
 

@@ -47,9 +47,16 @@ layout:
   bottom: 0
 
 # Default pattern: chase, chase_reverse, swirl, front_to_back, back_to_front,
-#   left_off, right_off, upper_bass, bass_flood, treble_hue, band_split,
-#   music_color, breathing, all_on
+#   left_off, right_off, left_right_alt, center_out, upper_bass, bass_flood,
+#   beat_hue (hue jumps on beat),
+#   treble_hue, band_split, music_color, breathing, all_on, zone_mix
 default_pattern: chase
+
+# zone_mix: different pattern per zone, cycles every zone_cycle_seconds
+# zone_mix_sets:
+#   - { top: chase, left: left_off, right: right_off, front: bass_flood, back: center_out }
+#   - { top: center_out, left: chase, right: chase, front: left_right_alt, back: music_color }
+# zone_cycle_seconds: 14
 
 # Chase pattern: tail length (lights in the "tail" of the chase)
 chase_tail: 3

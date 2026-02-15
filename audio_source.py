@@ -209,7 +209,8 @@ class MicrophoneSource:
 
 class PulseSource:
     """
-    Capture from a PipeWire/Pulse source by name using ffmpeg.
+    Capture from a PipeWire/Pulse source by name.
+    Tries pw-record (PipeWire native) first, then ffmpeg.
     Bypasses PortAudio - uses the exact source you specify.
     """
 
@@ -219,32 +220,50 @@ class PulseSource:
         self.chunk_size = chunk_size
         self._process: subprocess.Popen | None = None
         self._buf = bytearray()
+        self._use_pw_record = shutil.which("pw-record") is not None
 
     def get_input_description(self) -> str:
         return self.source_name
 
     def start(self) -> None:
-        self._process = subprocess.Popen(
-            [
-                "ffmpeg",
-                "-f", "pulse",
-                "-i", self.source_name,
-                "-f", "f32le",
-                "-acodec", "pcm_f32le",
-                "-ac", "1",
-                "-ar", str(self.sample_rate),
-                "-nostdin",
-                "-loglevel", "error",
-                "-",
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+        if self._use_pw_record:
+            # PipeWire native - uses exact source
+            self._process = subprocess.Popen(
+                [
+                    "pw-record",
+                    "--target", self.source_name,
+                    "--rate", str(self.sample_rate),
+                    "--channels", "1",
+                    "--format", "f32",
+                    "--raw",
+                    "-",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            # ffmpeg fallback
+            self._process = subprocess.Popen(
+                [
+                    "ffmpeg",
+                    "-f", "pulse",
+                    "-i", self.source_name,
+                    "-f", "f32le",
+                    "-acodec", "pcm_f32le",
+                    "-ac", "1",
+                    "-ar", str(self.sample_rate),
+                    "-nostdin",
+                    "-loglevel", "error",
+                    "-",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
         self._buf = bytearray()
 
     def read(self) -> np.ndarray:
         if not self._process or self._process.poll() is not None:
-            raise RuntimeError("ffmpeg not running")
+            raise RuntimeError("capture process not running")
         need = self.chunk_size * 4  # f32le = 4 bytes per sample
         while len(self._buf) < need:
             chunk = self._process.stdout.read(need - len(self._buf))
@@ -263,7 +282,7 @@ class PulseSource:
 
 
 def pulse_source_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return shutil.which("pw-record") is not None or shutil.which("ffmpeg") is not None
 
 
 class FileSource:
