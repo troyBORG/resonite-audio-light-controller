@@ -2,6 +2,8 @@
 
 Audio-reactive lighting for Resonite VR. Uses [ResoniteLink](https://github.com/Yellow-Dog-Man/ResoniteLink) to create and control FrooxEngine.Light components in real time. Define how many lights you want in each direction (left, right, front, back, top), and the program creates them in-world and drives them with patterns that react to music.
 
+**Status: In development.** Only tested on Linux. Windows/macOS may not work. Known quirks: system audio capture (speakers) on Linux can have latency or fall back to microphone if not configured correctly; see config for `audio_source: speakers` and `audio_pulse_source`.
+
 ## What does this do?
 
 The program captures audio, runs an FFT to get frequency bands (bass, mids, treble), and sends Color/Intensity updates to lights in Resonite over WebSocket. You choose a layout (e.g. 5 left, 5 right, 3 front), pick a pattern (chase, swirl, breathing, etc.), and the lights react in real time.

@@ -102,7 +102,11 @@ async def run(
     print(f"Connecting to Resonite at {resonite_url}...")
 
     client = ResoniteClient(url=resonite_url)
-    await client.connect()
+    try:
+        await client.connect()
+    except OSError:
+        print(f"Invalid port or Resonite not running. Could not connect to {resonite_url}")
+        sys.exit(1)
 
     try:
         await client.setup_lights(

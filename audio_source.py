@@ -210,8 +210,8 @@ class MicrophoneSource:
 class PulseSource:
     """
     Capture from a PipeWire/Pulse source by name.
-    Tries pw-record (PipeWire native) first, then ffmpeg.
-    Bypasses PortAudio - uses the exact source you specify.
+    Prefers ffmpeg (correctly uses pactl source names); pw-record --target
+    ignores Pulse source names and falls back to default mic on many setups.
     """
 
     def __init__(self, source_name: str, sample_rate: int, chunk_size: int):
@@ -220,32 +220,22 @@ class PulseSource:
         self.chunk_size = chunk_size
         self._process: subprocess.Popen | None = None
         self._buf = bytearray()
-        self._use_pw_record = shutil.which("pw-record") is not None
+        self._use_ffmpeg = shutil.which("ffmpeg") is not None
 
     def get_input_description(self) -> str:
-        return self.source_name
+        backend = "ffmpeg" if self._use_ffmpeg else "pw-record"
+        return f"{self.source_name} (via {backend})"
 
     def start(self) -> None:
-        if self._use_pw_record:
-            # PipeWire native - uses exact source
-            self._process = subprocess.Popen(
-                [
-                    "pw-record",
-                    "--target", self.source_name,
-                    "--rate", str(self.sample_rate),
-                    "--channels", "1",
-                    "--format", "f32",
-                    "--raw",
-                    "-",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-            )
-        else:
-            # ffmpeg fallback
+        if self._use_ffmpeg:
+            # ffmpeg with -f pulse; low-latency flags to avoid ~10+ second default buffer
             self._process = subprocess.Popen(
                 [
                     "ffmpeg",
+                    "-fflags", "nobuffer",
+                    "-flags", "low_delay",
+                    "-analyzeduration", "100000",  # 0.1s (default 5M = 5s)
+                    "-probesize", "32768",
                     "-f", "pulse",
                     "-i", self.source_name,
                     "-f", "f32le",
@@ -258,6 +248,20 @@ class PulseSource:
                 ],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+            )
+        else:
+            self._process = subprocess.Popen(
+                [
+                    "pw-record",
+                    "--target", self.source_name,
+                    "--rate", str(self.sample_rate),
+                    "--channels", "1",
+                    "--format", "f32",
+                    "--raw",
+                    "-",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
             )
         self._buf = bytearray()
 
