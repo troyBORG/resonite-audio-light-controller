@@ -10,8 +10,11 @@ from light_layout import LightLayout, LightDescriptor, Zone
 
 class Pattern(Enum):
     CHASE = "chase"
+    CHASE_REVERSE = "chase_reverse"
     FRONT_TO_BACK = "front_to_back"
+    BACK_TO_FRONT = "back_to_front"
     LEFT_OFF = "left_off"
+    RIGHT_OFF = "right_off"
     MUSIC_COLOR = "music_color"
     ALL_ON = "all_on"
 
@@ -51,7 +54,7 @@ class PatternEngine:
         return phase
 
     def _chase_intensity(
-        self, ld: LightDescriptor, phase: float, tail_len: int
+        self, ld: LightDescriptor, phase: float, tail_len: int, reverse: bool = False
     ) -> float:
         """
         Chase pattern: one lit "head" moves, with a tail of dimming lights.
@@ -60,17 +63,23 @@ class PatternEngine:
         n = self.layout.total_lights()
         if n == 0:
             return 0.0
+        if reverse:
+            phase = 1.0 - phase
         head_pos = phase * n
         dist = (ld.global_index - head_pos + n) % n
         if dist <= tail_len:
             return 1.0 - (dist / (tail_len + 1))
         return 0.0
 
-    def _front_to_back_intensity(self, ld: LightDescriptor, phase: float) -> float:
+    def _front_to_back_intensity(
+        self, ld: LightDescriptor, phase: float, reverse: bool = False
+    ) -> float:
         """
         Front-to-back wave: front lights light first, then back.
         Uses zones: front -> left/right -> back. Top/bottom follow their row.
         """
+        if reverse:
+            phase = 1.0 - phase
         zone_order = [Zone.FRONT, Zone.LEFT, Zone.RIGHT, Zone.BACK, Zone.TOP, Zone.BOTTOM]
         try:
             zone_phase = zone_order.index(ld.zone) / len(zone_order)
@@ -84,8 +93,14 @@ class PatternEngine:
         return max(0, 1.0 - dist * 3)
 
     def _left_off_intensity(self, ld: LightDescriptor) -> float:
-        """Left lights off, right lights on (or vice versa - configurable)."""
+        """Left lights off, right lights on."""
         if ld.zone == Zone.LEFT:
+            return 0.0
+        return 1.0
+
+    def _right_off_intensity(self, ld: LightDescriptor) -> float:
+        """Right lights off, left lights on."""
+        if ld.zone == Zone.RIGHT:
             return 0.0
         return 1.0
 
@@ -117,11 +132,17 @@ class PatternEngine:
             color = music_color
 
             if pattern == Pattern.CHASE:
-                intensity = self._chase_intensity(ld, phase, self.chase_tail)
+                intensity = self._chase_intensity(ld, phase, self.chase_tail, False)
+            elif pattern == Pattern.CHASE_REVERSE:
+                intensity = self._chase_intensity(ld, phase, self.chase_tail, True)
             elif pattern == Pattern.FRONT_TO_BACK:
-                intensity = self._front_to_back_intensity(ld, phase)
+                intensity = self._front_to_back_intensity(ld, phase, False)
+            elif pattern == Pattern.BACK_TO_FRONT:
+                intensity = self._front_to_back_intensity(ld, phase, True)
             elif pattern == Pattern.LEFT_OFF:
                 intensity = self._left_off_intensity(ld)
+            elif pattern == Pattern.RIGHT_OFF:
+                intensity = self._right_off_intensity(ld)
             elif pattern == Pattern.MUSIC_COLOR:
                 # All on, color from music
                 intensity = 0.5 + 0.5 * (bands.overall if bands else 0.5)
@@ -129,7 +150,7 @@ class PatternEngine:
                 intensity = 1.0
 
             # Boost intensity with bass for most patterns
-            if bands and pattern != Pattern.LEFT_OFF:
+            if bands and pattern not in (Pattern.LEFT_OFF, Pattern.RIGHT_OFF):
                 intensity = min(1.0, intensity * (0.7 + 0.3 * bands.low))
 
             states.append(

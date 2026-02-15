@@ -12,7 +12,10 @@ from light_layout import LightLayout, LightDescriptor, Zone
 from pattern_engine import LightState
 
 ID_PREFIX = "RALC_"
-LIGHT_COMPONENT = "[FrooxEngine]FrooxEngine.PointLight"
+# FrooxEngine.Light handles Point/Spot/Directional via LightType enum
+LIGHT_COMPONENT = "[FrooxEngine]FrooxEngine.Light"
+# LightType enum: 0=Point, 1=Spot, 2=Directional (from Renderite.Shared)
+LIGHT_TYPE_POINT = 0
 
 
 def _ref(target_id: str) -> dict:
@@ -23,8 +26,9 @@ def _float3(x: float, y: float, z: float) -> dict:
     return {"$type": "float3", "value": {"x": x, "y": y, "z": z}}
 
 
-def _color(r: float, g: float, b: float) -> dict:
-    return _float3(r, g, b)
+def _color(r: float, g: float, b: float, a: float = 1.0) -> dict:
+    """colorX format per ResoniteLink (Light.Color is Sync<colorX>)."""
+    return {"$type": "colorX", "value": {"r": r, "g": g, "b": b, "a": a}}
 
 
 def _str_val(s: str) -> dict:
@@ -37,6 +41,10 @@ def _float_val(v: float) -> dict:
 
 def _bool_val(v: bool) -> dict:
     return {"$type": "bool", "value": v}
+
+
+def _int_val(v: int) -> dict:
+    return {"$type": "int", "value": v}
 
 
 class ResoniteClient:
@@ -153,6 +161,7 @@ class ResoniteClient:
                     "id": comp_id,
                     "componentType": LIGHT_COMPONENT,
                     "members": {
+                        "LightType": _int_val(LIGHT_TYPE_POINT),
                         "Color": _color(1, 0.5, 0.2),
                         "Intensity": _float_val(1.0),
                         "Range": _float_val(10.0),

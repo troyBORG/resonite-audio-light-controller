@@ -24,7 +24,8 @@ layout:
   top: 4
   bottom: 0
 
-# Default pattern: "chase", "front_to_back", "left_off", "music_color", "all_on"
+# Default pattern: chase, chase_reverse, front_to_back, back_to_front,
+#   left_off, right_off, music_color, all_on
 default_pattern: chase
 
 # Chase pattern: tail length (lights in the "tail" of the chase)

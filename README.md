@@ -1,6 +1,6 @@
 # Resonite Audio Light Controller
 
-Audio-reactive lighting for Resonite VR. Define how many lights you want in each direction (left, right, front, back, top), and the program creates them in-world and drives them with patterns that react to music.
+Audio-reactive lighting for Resonite VR. Uses [ResoniteLink](https://github.com/Yellow-Dog-Man/ResoniteLink) to create and control FrooxEngine.Light components in real time. Define how many lights you want in each direction (left, right, front, back, top), and the program creates them in-world and drives them with patterns that react to music.
 
 ## Features
 
@@ -40,8 +40,11 @@ python main.py -i
 
 # Specific pattern
 python main.py -p chase
+python main.py -p chase_reverse
 python main.py -p front_to_back
+python main.py -p back_to_front
 python main.py -p left_off
+python main.py -p right_off
 python main.py -p music_color
 python main.py -p all_on
 
@@ -59,3 +62,8 @@ python main.py --demo
 | `default_pattern` | Pattern to run                  |
 | `chase_tail`  | Number of lights in chase tail (2–3) |
 | `update_rate` | Updates per second (default 30)      |
+
+## Implementation Notes
+
+- **Light component**: Uses `[FrooxEngine]FrooxEngine.Light` with `LightType=0` (Point). Color is `colorX` (r,g,b,a) per ResoniteLink.
+- **DynamicVariableSpace**: Each session creates an `AudioLights` space for organization; lights are named `Light_{zone}_{index}`.
