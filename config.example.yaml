@@ -3,6 +3,20 @@
 # ResoniteLink WebSocket URL (enable ResoniteLink in Resonite first)
 resonite_url: "ws://localhost:27404/ResoniteLink"
 
+# Parent slot for lights (e.g. DJ booth slot ID). Omit or null to parent under Root.
+# parent_slot_id: "Reso_XXXX"
+
+# Center position offset - shifts all zone positions (e.g. around DJ booth at 0,0,0)
+center:
+  x: 0
+  y: 0
+  z: 0
+
+# Light rotation - spins lights around Y axis, optionally synced to bass
+rotation_enabled: false
+rotation_speed: 30          # degrees per second (base)
+rotation_audio_boost: true  # boost speed with bass
+
 # Audio source: "microphone" or path to audio file (e.g. "music.mp3")
 audio_source: microphone
 # audio_source: "/path/to/your/music.mp3"

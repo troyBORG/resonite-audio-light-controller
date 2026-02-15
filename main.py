@@ -51,6 +51,14 @@ async def run(
     pattern = Pattern(pattern_name or config.get("default_pattern", "chase"))
     chase_tail = config.get("chase_tail", 3)
     update_rate = config.get("update_rate", 30)
+    parent_slot_id = config.get("parent_slot_id") or None
+    center = config.get("center") or {}
+    center_x = float(center.get("x", 0))
+    center_y = float(center.get("y", 0))
+    center_z = float(center.get("z", 0))
+    rotation_enabled = config.get("rotation_enabled", False)
+    rotation_speed = float(config.get("rotation_speed", 30))
+    rotation_audio_boost = config.get("rotation_audio_boost", True)
     sample_rate = config.get("sample_rate", 44100)
     fft_size = config.get("fft_size", 2048)
     audio_source_cfg = config.get("audio_source", "microphone")
@@ -64,7 +72,13 @@ async def run(
     await client.connect()
 
     try:
-        await client.setup_lights(layout)
+        await client.setup_lights(
+            layout,
+            parent_slot_id=parent_slot_id,
+            center_x=center_x,
+            center_y=center_y,
+            center_z=center_z,
+        )
         print(f"Created {total} lights in Resonite.")
     except Exception as e:
         print(f"Failed to create lights: {e}")
@@ -88,7 +102,13 @@ async def run(
             await client.disconnect()
             sys.exit(1)
 
-    pattern_engine = PatternEngine(layout, chase_tail=chase_tail)
+    pattern_engine = PatternEngine(
+        layout,
+        chase_tail=chase_tail,
+        rotation_enabled=rotation_enabled,
+        rotation_speed=rotation_speed,
+        rotation_audio_boost=rotation_audio_boost,
+    )
     interval = 1.0 / update_rate
 
     print("Running. Press Ctrl+C to stop.")

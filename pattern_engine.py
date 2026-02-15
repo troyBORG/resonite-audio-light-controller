@@ -33,12 +33,13 @@ class Pattern(Enum):
 
 @dataclass
 class LightState:
-    """Per-light state: color (r,g,b) and intensity (0-1)."""
+    """Per-light state: color (r,g,b), intensity (0-1), optional rotation_y (radians)."""
 
     r: float
     g: float
     b: float
     intensity: float
+    rotation_y: float | None = None  # radians, Y-axis; None = no rotation update
 
 
 def _base_color() -> tuple[float, float, float]:
@@ -54,9 +55,15 @@ class PatternEngine:
         self,
         layout: LightLayout,
         chase_tail: int = 3,
+        rotation_enabled: bool = False,
+        rotation_speed: float = 30.0,
+        rotation_audio_boost: bool = True,
     ):
         self.layout = layout
         self.chase_tail = chase_tail
+        self.rotation_enabled = rotation_enabled
+        self.rotation_speed = rotation_speed  # deg/sec
+        self.rotation_audio_boost = rotation_audio_boost
         self._start_time = time.perf_counter()
 
     def _phase(self, speed: float = 1.0) -> float:
@@ -153,6 +160,17 @@ class PatternEngine:
         color = hue_to_rgb(hue, 0.85, 0.9)
         return color, breath
 
+    def _rotation_y(self, bands: FrequencyBands | None) -> float | None:
+        """Current Y rotation in radians, or None if rotation disabled."""
+        if not self.rotation_enabled:
+            return None
+        t = time.perf_counter() - self._start_time
+        deg_per_sec = self.rotation_speed
+        if self.rotation_audio_boost and bands:
+            deg_per_sec *= 0.7 + 0.6 * bands.low
+        angle_deg = (t * deg_per_sec) % 360
+        return math.radians(angle_deg)
+
     def compute(
         self,
         pattern: Pattern,
@@ -176,11 +194,16 @@ class PatternEngine:
         else:
             music_color = _base_color()
 
+        rotation_y = self._rotation_y(bands)
+
         # Breathing: compute once, same for all lights
         if pattern == Pattern.BREATHING:
             breath_color, breath_intensity = self._breathing_state(music_color)
             return [
-                LightState(r=breath_color[0], g=breath_color[1], b=breath_color[2], intensity=breath_intensity)
+                LightState(
+                    r=breath_color[0], g=breath_color[1], b=breath_color[2],
+                    intensity=breath_intensity, rotation_y=rotation_y,
+                )
                 for _ in self.layout.iter_lights()
             ]
 
@@ -235,6 +258,7 @@ class PatternEngine:
                     g=color[1],
                     b=color[2],
                     intensity=intensity,
+                    rotation_y=rotation_y,
                 )
             )
 

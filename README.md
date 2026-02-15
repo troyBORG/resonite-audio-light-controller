@@ -74,14 +74,19 @@ python main.py --demo
 
 ## Config
 
-| Option        | Description                          |
-|---------------|--------------------------------------|
-| `resonite_url`| ResoniteLink WebSocket URL           |
-| `audio_source`| `microphone` or path to audio file   |
-| `layout`      | `left`, `right`, `front`, `back`, `top`, `bottom` counts |
-| `default_pattern` | Pattern to run                  |
-| `chase_tail`  | Number of lights in chase tail (2–3) |
-| `update_rate` | Updates per second (default 30)      |
+| Option | Description |
+|--------|--------------|
+| `resonite_url` | ResoniteLink WebSocket URL |
+| `parent_slot_id` | Slot ID to parent lights under (e.g. DJ booth). Omit for Root. |
+| `center` | `{x, y, z}` offset for all light positions (e.g. around DJ booth) |
+| `rotation_enabled` | Spin lights around Y axis |
+| `rotation_speed` | Degrees per second (default 30) |
+| `rotation_audio_boost` | Boost rotation speed with bass |
+| `audio_source` | `microphone` or path to audio file |
+| `layout` | `left`, `right`, `front`, `back`, `top`, `bottom` counts |
+| `default_pattern` | Pattern to run |
+| `chase_tail` | Number of lights in chase tail (2–3) |
+| `update_rate` | Updates per second (default 30) |
 
 ## Patterns
 
@@ -102,3 +107,6 @@ python main.py --demo
 
 - **Light component**: Uses `[FrooxEngine]FrooxEngine.Light` with `LightType=0` (Point). Color is `colorX` (r,g,b,a) per ResoniteLink.
 - **DynamicVariableSpace**: Each session creates an `AudioLights` space for organization; lights are named `Light_{zone}_{index}`.
+- **Positioning**: Use `parent_slot_id` to place lights under a DJ booth; use `center` to offset all zones.
+- **Rotation**: Set `rotation_enabled: true` to spin lights; rotation is sent via `updateSlot` each frame.
+- **ProtoFlux**: We drive lights directly via ResoniteLink. ProtoFlux creation from external tools is exploratory; see `docs/PROTOFLUX.md`.

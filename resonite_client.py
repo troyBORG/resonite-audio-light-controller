@@ -1,6 +1,7 @@
 """ResoniteLink WebSocket client: create and update lights in Resonite."""
 
 import asyncio
+import math
 import json
 import uuid
 from typing import Any
@@ -47,6 +48,17 @@ def _int_val(v: int) -> dict:
     return {"$type": "int", "value": v}
 
 
+def _floatQ(x: float, y: float, z: float, w: float) -> dict:
+    """Quaternion for slot rotation."""
+    return {"$type": "floatQ", "value": {"x": x, "y": y, "z": z, "w": w}}
+
+
+def euler_y_to_quat(angle_rad: float) -> dict:
+    """Rotation around Y axis (up) - angle in radians."""
+    half = angle_rad / 2
+    return _floatQ(0, math.sin(half), 0, math.cos(half))
+
+
 class ResoniteClient:
     """
     Async WebSocket client for ResoniteLink.
@@ -84,21 +96,29 @@ class ResoniteClient:
         except asyncio.TimeoutError:
             return None
 
-    async def setup_lights(self, layout: LightLayout) -> None:
+    async def setup_lights(
+        self,
+        layout: LightLayout,
+        parent_slot_id: str | None = None,
+        center_x: float = 0,
+        center_y: float = 0,
+        center_z: float = 0,
+    ) -> None:
         """
         Create the light hierarchy in Resonite.
-        Root -> DynamicVariableSpace -> one slot per light with PointLight.
+        parent_slot_id: slot to parent under (e.g. DJ booth). None = Root.
+        center_*: offset all positions (e.g. around DJ booth).
         """
         self._layout = layout
         root_id = f"{ID_PREFIX}Root_{uuid.uuid4().hex[:8]}"
         self._root_slot_id = root_id
+        parent = _ref(parent_slot_id or "Root")
 
-        # Create root slot
         await self._send({
             "$type": "addSlot",
             "data": {
                 "id": root_id,
-                "parent": _ref("Root"),
+                "parent": parent,
                 "name": _str_val("Audio Lights"),
             },
         })
@@ -132,7 +152,6 @@ class ResoniteClient:
 
         for ld in layout.iter_lights():
             base_x, base_y, base_z = zone_positions.get(ld.zone, (0, 1.5, 0))
-            # Spread lights within zone
             offset = (ld.zone_index - ld.zone_count / 2) * 0.5
             if ld.zone in (Zone.LEFT, Zone.RIGHT):
                 x, y, z = base_x, base_y + offset, base_z
@@ -140,6 +159,9 @@ class ResoniteClient:
                 x, y, z = base_x + offset, base_y, base_z
             else:
                 x, y, z = base_x + offset, base_y, base_z
+            x += center_x
+            y += center_y
+            z += center_z
 
             slot_id = f"{ID_PREFIX}Light_{ld.global_index}_{uuid.uuid4().hex[:6]}"
             comp_id = f"{ID_PREFIX}Comp_{ld.global_index}_{uuid.uuid4().hex[:6]}"
@@ -173,12 +195,13 @@ class ResoniteClient:
             self._component_ids.append(comp_id)
 
     async def update_lights(self, states: list[LightState]) -> None:
-        """Send updateComponent for each light with new color and intensity (parallel)."""
+        """Send updateComponent (and updateSlot for rotation) for each light (parallel)."""
         tasks = []
         for i, state in enumerate(states):
             if i >= len(self._component_ids):
                 break
             comp_id = self._component_ids[i]
+            slot_id = self._slot_ids[i] if i < len(self._slot_ids) else None
             intensity = max(0.0, min(1.0, state.intensity))
             msg = {
                 "$type": "updateComponent",
@@ -186,11 +209,20 @@ class ResoniteClient:
                     "id": comp_id,
                     "members": {
                         "Color": _color(state.r, state.g, state.b),
-                        "Intensity": _float_val(intensity * 2.0),  # scale for visibility
+                        "Intensity": _float_val(intensity * 2.0),
                     },
                 },
             }
             tasks.append(self._send(msg))
+            if slot_id is not None and state.rotation_y is not None:
+                rot_msg = {
+                    "$type": "updateSlot",
+                    "data": {
+                        "id": slot_id,
+                        "rotation": euler_y_to_quat(state.rotation_y),
+                    },
+                }
+                tasks.append(self._send(rot_msg))
         if tasks:
             await asyncio.gather(*tasks)
 
