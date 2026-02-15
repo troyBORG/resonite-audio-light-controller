@@ -89,7 +89,7 @@ Copy `config.example.yaml` to `config.yaml` only if you want to customize. Defau
 | `rotation_enabled` | Spin lights around Y axis |
 | `rotation_speed` | Degrees per second (default 30) |
 | `rotation_audio_boost` | Boost rotation speed with bass |
-| `audio_source` | `microphone` or path to audio file |
+| `audio_source` | `speakers` (system output), `microphone`, or path to audio file |
 | `audio_device` | Optional: input device index or name (run `--list-devices` to see options) |
 | `layout` | `left`, `right`, `front`, `back`, `top`, `bottom` counts |
 | `default_pattern` | Pattern to run |

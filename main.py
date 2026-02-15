@@ -120,10 +120,25 @@ async def run(
         sys.exit(1)
 
     # Audio source (skip if demo mode)
+    # speakers = capture from system output (requires audio_pulse_source)
+    # microphone = capture from mic
+    # path = capture from file
+    use_speakers = (
+        (isinstance(audio_source_cfg, str) and audio_source_cfg.lower() == "speakers")
+        or audio_pulse_source
+    )
     audio = None
     chunk_size = fft_size
     if not demo:
-        if audio_pulse_source:
+        if use_speakers:
+            if not audio_pulse_source:
+                print(
+                    "audio_source: speakers requires audio_pulse_source. "
+                    "Run: pactl list sources short"
+                )
+                await client.teardown()
+                await client.disconnect()
+                sys.exit(1)
             if pulse_source_available():
                 audio = PulseSource(str(audio_pulse_source), sample_rate, chunk_size)
             else:
