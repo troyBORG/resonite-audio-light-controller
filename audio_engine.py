@@ -11,9 +11,10 @@ import numpy as np
 class FrequencyBands:
     """Energy levels in low, mid, and high frequency bands (0-1 normalized)."""
 
-    low: float  # bass
-    mid: float  # mids
-    high: float  # treble
+    low: float  # bass 20-250 Hz
+    upper_bass: float  # upper bass 60-150 Hz (punch, kick)
+    mid: float  # mids 250-2000 Hz
+    high: float  # treble 2000-20000 Hz
     overall: float  # full-spectrum energy
 
 
@@ -45,14 +46,16 @@ def fft_frequency_bands(
         return float(np.mean(magnitudes[low_bin:high_bin]))
 
     low_e = band_energy(20, 250)
+    upper_bass_e = band_energy(60, 150)
     mid_e = band_energy(250, 2000)
     high_e = band_energy(2000, 20000)
     overall_e = band_energy(20, 20000)
 
     # Normalize to 0-1 range (clip and scale based on typical levels)
-    scale = 1.0 / max(1e-6, max(low_e, mid_e, high_e, overall_e) * 2.0)
+    scale = 1.0 / max(1e-6, max(low_e, upper_bass_e, mid_e, high_e, overall_e) * 2.0)
     return FrequencyBands(
         low=min(1.0, low_e * scale),
+        upper_bass=min(1.0, upper_bass_e * scale),
         mid=min(1.0, mid_e * scale),
         high=min(1.0, high_e * scale),
         overall=min(1.0, overall_e * scale),
@@ -62,6 +65,22 @@ def fft_frequency_bands(
 def energy_to_hue(energy: float, base_hue: float = 0.0) -> float:
     """Map energy (0-1) to hue shift. Returns hue in 0-1 (maps to 0-360°)."""
     return (base_hue + energy * 0.3) % 1.0
+
+
+def rgb_to_hue(r: float, g: float, b: float) -> float:
+    """Convert RGB to hue 0-1. Returns 0 if color is achromatic."""
+    mx = max(r, g, b)
+    mn = min(r, g, b)
+    if mx == mn:
+        return 0.0
+    d = mx - mn
+    if mx == r:
+        h = (g - b) / d + (6 if g < b else 0)
+    elif mx == g:
+        h = (b - r) / d + 2
+    else:
+        h = (r - g) / d + 4
+    return (h / 6) % 1.0
 
 
 def hue_to_rgb(hue: float, saturation: float = 1.0, value: float = 1.0) -> tuple[float, float, float]:
