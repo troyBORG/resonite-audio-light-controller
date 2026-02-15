@@ -1,6 +1,7 @@
 """ResoniteLink WebSocket client: create and update lights in Resonite."""
 
 import asyncio
+import logging
 import math
 import json
 import uuid
@@ -12,15 +13,27 @@ from websockets.client import WebSocketClientProtocol
 from light_layout import LightLayout, LightDescriptor, Zone
 from pattern_engine import LightState
 
+logger = logging.getLogger(__name__)
 ID_PREFIX = "RALC_"
 # FrooxEngine.Light handles Point/Spot/Directional via LightType enum
 LIGHT_COMPONENT = "[FrooxEngine]FrooxEngine.Light"
-# LightType enum: 0=Point, 1=Spot, 2=Directional (from Renderite.Shared)
-LIGHT_TYPE_POINT = 0
+# LightType enum values for addComponent: Point, Spot, Directional
+LIGHT_TYPE_POINT = "Point"
+# Visual mesh for each light (small sphere)
+SPHERE_MESH = "[FrooxEngine]FrooxEngine.SphereMesh"
+PBS_METALLIC = "[FrooxEngine]FrooxEngine.PBS_Metallic"
+MESH_RENDERER = "[FrooxEngine]FrooxEngine.MeshRenderer"
+# Default bulb scale (sphere radius ~0.5 so this gives ~0.1m)
+LIGHT_VISUAL_SCALE = 0.2
 
 
 def _ref(target_id: str) -> dict:
     return {"$type": "reference", "targetId": target_id}
+
+
+def _ref_list(*target_ids: str) -> dict:
+    """List of references (e.g. for MeshRenderer.Materials)."""
+    return {"$type": "list", "elements": [_ref(tid) for tid in target_ids]}
 
 
 def _float3(x: float, y: float, z: float) -> dict:
@@ -48,6 +61,11 @@ def _int_val(v: int) -> dict:
     return {"$type": "int", "value": v}
 
 
+def _enum_val(enum_type: str, value: str) -> dict:
+    """ResoniteLink enum field (e.g. LightType = Point)."""
+    return {"$type": "enum", "value": value, "enumType": enum_type}
+
+
 def _floatQ(x: float, y: float, z: float, w: float) -> dict:
     """Quaternion for slot rotation."""
     return {"$type": "floatQ", "value": {"x": x, "y": y, "z": z, "w": w}}
@@ -72,6 +90,7 @@ class ResoniteClient:
         self._slot_ids: list[str] = []
         self._component_ids: list[str] = []
         self._root_slot_id: str = ""
+        self._send_lock = asyncio.Lock()
 
     async def connect(self) -> None:
         self._ws = await websockets.connect(
@@ -89,12 +108,24 @@ class ResoniteClient:
     async def _send(self, msg: dict) -> dict | None:
         if not self._ws:
             raise RuntimeError("Not connected")
-        await self._ws.send(json.dumps(msg))
-        try:
-            resp = await asyncio.wait_for(self._ws.recv(), timeout=5.0)
-            return json.loads(resp)
-        except asyncio.TimeoutError:
-            return None
+        async with self._send_lock:
+            await self._ws.send(json.dumps(msg))
+            try:
+                resp = await asyncio.wait_for(self._ws.recv(), timeout=5.0)
+                return json.loads(resp)
+            except asyncio.TimeoutError:
+                return None
+
+    def _check_response(self, resp: dict | None, op: str, context: str = "") -> None:
+        """Log and raise if response indicates error."""
+        if resp is None:
+            logger.warning("%s %s: no response (timeout)", op, context)
+            return
+        err = resp.get("errorInfo")
+        if err:
+            msg = f"{op} {context}: {err}"
+            logger.error(msg)
+            raise RuntimeError(msg)
 
     async def setup_lights(
         self,
@@ -114,7 +145,7 @@ class ResoniteClient:
         self._root_slot_id = root_id
         parent = _ref(parent_slot_id or "Root")
 
-        await self._send({
+        r = await self._send({
             "$type": "addSlot",
             "data": {
                 "id": root_id,
@@ -122,10 +153,11 @@ class ResoniteClient:
                 "name": _str_val("Audio Lights"),
             },
         })
+        self._check_response(r, "addSlot", root_id)
 
         # Add DynamicVariableSpace for tagging/organization
         space_id = f"{ID_PREFIX}Space_{uuid.uuid4().hex[:8]}"
-        await self._send({
+        r = await self._send({
             "$type": "addComponent",
             "containerSlotId": root_id,
             "data": {
@@ -136,6 +168,7 @@ class ResoniteClient:
                 },
             },
         })
+        self._check_response(r, "addComponent", "DynamicVariableSpace")
 
         self._slot_ids = []
         self._component_ids = []
@@ -166,30 +199,76 @@ class ResoniteClient:
             slot_id = f"{ID_PREFIX}Light_{ld.global_index}_{uuid.uuid4().hex[:6]}"
             comp_id = f"{ID_PREFIX}Comp_{ld.global_index}_{uuid.uuid4().hex[:6]}"
 
-            await self._send({
+            r = await self._send({
                 "$type": "addSlot",
                 "data": {
                     "id": slot_id,
                     "parent": _ref(root_id),
                     "name": _str_val(f"Light_{ld.zone.value}_{ld.zone_index}"),
                     "position": _float3(x, y, z),
+                    "scale": _float3(LIGHT_VISUAL_SCALE, LIGHT_VISUAL_SCALE, LIGHT_VISUAL_SCALE),
                 },
             })
+            self._check_response(r, "addSlot", slot_id)
 
-            await self._send({
+            r = await self._send({
                 "$type": "addComponent",
                 "containerSlotId": slot_id,
                 "data": {
                     "id": comp_id,
                     "componentType": LIGHT_COMPONENT,
                     "members": {
-                        "LightType": _int_val(LIGHT_TYPE_POINT),
+                        "LightType": _enum_val("LightType", LIGHT_TYPE_POINT),
                         "Color": _color(1, 0.5, 0.2),
                         "Intensity": _float_val(1.0),
                         "Range": _float_val(10.0),
                     },
                 },
             })
+            self._check_response(r, "addComponent", comp_id)
+
+            # Visual: small sphere so you can see where each light is
+            mesh_id = f"{ID_PREFIX}Mesh_{ld.global_index}_{uuid.uuid4().hex[:6]}"
+            mat_id = f"{ID_PREFIX}Mat_{ld.global_index}_{uuid.uuid4().hex[:6]}"
+            renderer_id = f"{ID_PREFIX}Rend_{ld.global_index}_{uuid.uuid4().hex[:6]}"
+            bulb_color = (1.0, 0.5, 0.2)
+
+            r = await self._send({
+                "$type": "addComponent",
+                "containerSlotId": slot_id,
+                "data": {"id": mesh_id, "componentType": SPHERE_MESH, "members": {}},
+            })
+            self._check_response(r, "addComponent", mesh_id)
+
+            r = await self._send({
+                "$type": "addComponent",
+                "containerSlotId": slot_id,
+                "data": {
+                    "id": mat_id,
+                    "componentType": PBS_METALLIC,
+                    "members": {"AlbedoColor": _color(*bulb_color)},
+                },
+            })
+            self._check_response(r, "addComponent", mat_id)
+
+            r = await self._send({
+                "$type": "addComponent",
+                "containerSlotId": slot_id,
+                "data": {"id": renderer_id, "componentType": MESH_RENDERER, "members": {}},
+            })
+            self._check_response(r, "addComponent", renderer_id)
+
+            r = await self._send({
+                "$type": "updateComponent",
+                "data": {
+                    "id": renderer_id,
+                    "members": {
+                        "Mesh": _ref(mesh_id),
+                        "Materials": _ref_list(mat_id),
+                    },
+                },
+            })
+            self._check_response(r, "updateComponent", renderer_id)
 
             self._slot_ids.append(slot_id)
             self._component_ids.append(comp_id)

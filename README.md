@@ -29,9 +29,10 @@ The program captures audio, runs an FFT to get frequency bands (bass, mids, treb
 
    ```bash
    python -m venv .venv
-   source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
+   source .venv/bin/activate   # Bash/Zsh; Fish: source .venv/bin/activate.fish
    pip install -r requirements.txt
    ```
+   Or without activating: `.venv/bin/pip install -r requirements.txt` then run with `.venv/bin/python main.py`.
 
 2. **Enable ResoniteLink in Resonite**  
    In Resonite, host a world and enable ResoniteLink. Note the port (changes each session).
@@ -41,11 +42,14 @@ The program captures audio, runs an FFT to get frequency bands (bass, mids, treb
 ## Usage
 
 ```bash
-# First test (no audio; prompts for port)
+# First test (no audio; prompts for port – patterns run on time only, no music reaction)
 python main.py --demo -p chase
 
-# Run with audio (prompts for ResoniteLink port)
+# Run with audio (prompts for ResoniteLink port; startup shows which input is used)
 python main.py
+
+# See which audio input device is used and list all input devices
+python main.py --list-devices
 
 # Skip port prompt
 python main.py --port 27404
@@ -86,6 +90,7 @@ Copy `config.example.yaml` to `config.yaml` only if you want to customize. Defau
 | `rotation_speed` | Degrees per second (default 30) |
 | `rotation_audio_boost` | Boost rotation speed with bass |
 | `audio_source` | `microphone` or path to audio file |
+| `audio_device` | Optional: input device index or name (run `--list-devices` to see options) |
 | `layout` | `left`, `right`, `front`, `back`, `top`, `bottom` counts |
 | `default_pattern` | Pattern to run |
 | `chase_tail` | Number of lights in chase tail (2–3) |

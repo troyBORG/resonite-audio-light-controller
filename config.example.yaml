@@ -18,8 +18,16 @@ rotation_speed: 30          # degrees per second (base)
 rotation_audio_boost: true  # boost speed with bass
 
 # Audio source: "microphone" or path to audio file (e.g. "music.mp3")
+# Run with --list-devices to see input device indices.
 audio_source: microphone
 # audio_source: "/path/to/your/music.mp3"
+# Option A: Use a PipeWire/Pulse source by name (recommended for monitors)
+# Run: pactl list sources short
+# audio_pulse_source: "alsa_output.pci-0000_0b_00.1.hdmi-stereo.monitor"
+# Option B: Capture from monitor of output (if it appears in --list-devices)
+# audio_monitor_output: Yeti
+# Option C: Use input device by index
+# audio_device: 8   # pipewire, default, or index from --list-devices
 
 # Sample rate for audio processing (Hz)
 sample_rate: 44100

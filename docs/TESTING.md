@@ -2,20 +2,29 @@
 
 ## 1. Setup (Arch Linux)
 
-Create a virtual environment and install dependencies:
+Create a virtual environment and install dependencies. **Use your system Python** (e.g. from pacman), not an IDE/Cursor Python, or the venv can end up broken.
 
 ```bash
-cd /mnt/12tb/git/resonite-audio-light-controller
+cd resonite-audio-light-controller
 
-# Create venv
-python -m venv .venv
+# Remove old venv if you had one
+rm -rf .venv
 
-# Activate (run this in each new terminal)
-source .venv/bin/activate
+# Create venv with system Python (Arch)
+/usr/bin/python -m venv .venv
+# or:  /usr/bin/python3 -m venv .venv
 
 # Install deps (Arch may need: pacman -S portaudio libsndfile)
-pip install -r requirements.txt
+.venv/bin/pip install -r requirements.txt
 ```
+
+Run the app with the venv Python (no need to "activate" in Fish):
+
+```bash
+.venv/bin/python main.py --demo -p chase
+```
+
+**Fish users:** Run each command above on its own line. Do not paste the whole block. If you prefer to activate: `source .venv/bin/activate.fish`, then `pip install -r requirements.txt` and `python main.py ...`.
 
 ## 2. Start Resonite First
 
@@ -27,11 +36,11 @@ pip install -r requirements.txt
 ## 3. Run the Controller
 
 ```bash
-# Activate venv if needed
-source .venv/bin/activate
-
-# Demo mode (no audio) - best first test
+# If you activated the venv (Bash/Zsh/Fish):
 python main.py --demo -p chase
+
+# If you didn't activate (Option C), use the venv Python:
+.venv/bin/python main.py --demo -p chase
 ```
 
 When prompted, enter the ResoniteLink port (e.g. `27404`).

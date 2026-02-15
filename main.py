@@ -14,7 +14,19 @@ from pathlib import Path
 import yaml
 
 from audio_engine import fft_frequency_bands
-from audio_source import MicrophoneSource, FileSource
+from audio_source import (
+    MicrophoneSource,
+    FileSource,
+    PulseSource,
+    find_monitor_of_output,
+    get_default_input_device_index,
+    get_default_input_device_name,
+    get_default_output_device_index,
+    get_default_output_device_name,
+    list_input_devices,
+    list_output_devices,
+    pulse_source_available,
+)
 from light_layout import LightLayout
 from pattern_engine import Pattern, PatternEngine
 from resonite_client import ResoniteClient
@@ -63,6 +75,18 @@ async def run(
     sample_rate = config.get("sample_rate", 44100)
     fft_size = config.get("fft_size", 2048)
     audio_source_cfg = config.get("audio_source", "microphone")
+    audio_device = config.get("audio_device")
+    audio_monitor_output = config.get("audio_monitor_output")
+    audio_pulse_source = config.get("audio_pulse_source")
+    if audio_monitor_output:
+        monitor_idx = find_monitor_of_output(str(audio_monitor_output))
+        if monitor_idx is not None:
+            audio_device = monitor_idx
+        else:
+            print(
+                f"Warning: no monitor found for output '{audio_monitor_output}'. "
+                "Run --list-devices and look for 'Monitor of ...'. Using audio_device."
+            )
 
     # ResoniteLink port changes each session - prompt if not set
     port = port_override or config.get("resonite_port")
@@ -99,8 +123,16 @@ async def run(
     audio = None
     chunk_size = fft_size
     if not demo:
-        if isinstance(audio_source_cfg, str) and audio_source_cfg.lower() == "microphone":
-            audio = MicrophoneSource(sample_rate, chunk_size)
+        if audio_pulse_source:
+            if pulse_source_available():
+                audio = PulseSource(str(audio_pulse_source), sample_rate, chunk_size)
+            else:
+                print("audio_pulse_source is set but 'ffmpeg' not found. Install ffmpeg.")
+                await client.teardown()
+                await client.disconnect()
+                sys.exit(1)
+        elif isinstance(audio_source_cfg, str) and audio_source_cfg.lower() == "microphone":
+            audio = MicrophoneSource(sample_rate, chunk_size, device=audio_device)
         else:
             audio = FileSource(str(audio_source_cfg), sample_rate, chunk_size)
         try:
@@ -110,6 +142,10 @@ async def run(
             await client.teardown()
             await client.disconnect()
             sys.exit(1)
+        kind = "pulse" if isinstance(audio, PulseSource) else "microphone" if isinstance(audio, MicrophoneSource) else "file"
+        print(f"Audio: {kind} ({audio.get_input_description()})")
+    else:
+        print("Audio: none (demo mode – no music reaction; run without --demo for audio-reactive lights)")
 
     pattern_engine = PatternEngine(
         layout,
@@ -166,7 +202,48 @@ def main() -> None:
     parser.add_argument("--port", type=str, help="ResoniteLink port (skips prompt)")
     parser.add_argument("--interactive", "-i", action="store_true", help="Interactive layout setup")
     parser.add_argument("--demo", action="store_true", help="Run without audio (patterns only)")
+    parser.add_argument(
+        "--list-devices",
+        action="store_true",
+        help="List audio input devices and exit (use with config: audio_device: <index>)",
+    )
+    parser.add_argument(
+        "--list-output-devices",
+        action="store_true",
+        help="List audio output devices (speakers, DAC, HDMI). To capture from an output, use its monitor in --list-devices.",
+    )
     args = parser.parse_args()
+
+    if args.list_output_devices:
+        default_idx = get_default_output_device_index()
+        default_name = get_default_output_device_name()
+        print("Audio output devices (speakers, DAC, HDMI):")
+        if default_idx is not None:
+            print(f"  Current default: index {default_idx} ({default_name})")
+        else:
+            print("  Current default: (system default)")
+        print()
+        for idx, name in list_output_devices():
+            mark = "  ← default" if idx == default_idx else ""
+            print(f"  {idx}: {name}{mark}")
+        print()
+        print("To capture from an output, use an INPUT that monitors it (e.g. 'Monitor of ...').")
+        print("Run --list-devices to see inputs; set audio_device to the monitor's index.")
+        return
+
+    if args.list_devices:
+        default_idx = get_default_input_device_index()
+        default_name = get_default_input_device_name()
+        print("Audio input devices (use audio_device: <index> in config to choose):")
+        if default_idx is not None:
+            print(f"  Current default: index {default_idx} ({default_name})")
+        else:
+            print("  Current default: (system default)")
+        print()
+        for idx, name in list_input_devices():
+            mark = "  ← default" if idx == default_idx else ""
+            print(f"  {idx}: {name}{mark}")
+        return
 
     config = load_config(args.config)
     layout_override = None
