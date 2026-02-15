@@ -4,7 +4,7 @@ Audio-reactive lighting for Resonite VR. Uses [ResoniteLink](https://github.com/
 
 ---
 
-# ⚠️ IN DEVELOPMENT ⚠️
+## ⚠️ IN DEVELOPMENT ⚠️
 
 Linux-only tested. Windows/macOS untested. Some features may not work correctly.
 
