@@ -14,7 +14,7 @@ The program captures audio, runs an FFT to get frequency bands (bass, mids, treb
 | **System audio / Spotify** | Route your output into a virtual input. Then use mic mode. Linux: PulseAudio monitor. Windows: Stereo Mix or VB-Audio Cable. macOS: BlackHole. |
 | **Audio file** | Set `audio_source: /path/to/file.wav` in config. Supports WAV/FLAC. Loops. |
 
-**Resonance mod** – [Resonance](https://github.com/BlueCyro/Resonance) does FFT inside Resonite on audio streams. A future mode could read its band values instead of capturing audio externally. For now, use mic or file.
+**You don't need the Resonance mod** – This program does its own FFT on mic or file input and sends light updates via ResoniteLink. [Resonance](https://github.com/BlueCyro/Resonance) is different: it runs FFT inside Resonite on audio streams and outputs dynvars like `fft_stream_band_0` for ProtoFlux. We skip that and drive the lights directly.
 
 ## Features
 
@@ -61,6 +61,9 @@ python main.py -p back_to_front
 python main.py -p left_off
 python main.py -p right_off
 python main.py -p upper_bass
+python main.py -p bass_flood
+python main.py -p treble_hue
+python main.py -p band_split
 python main.py -p music_color
 python main.py -p breathing
 python main.py -p all_on
@@ -87,6 +90,9 @@ python main.py --demo
 | `chase` / `chase_reverse` | Moving head with tail, optionally reversed |
 | `swirl` | Circular rotating chase, speed boosted by upper bass |
 | `upper_bass` | All lights pulse with 60–150 Hz (punch/kick) |
+| `bass_flood` | Low freq drives brightness (flood lights) |
+| `treble_hue` | High freq drives hue, overall drives intensity |
+| `band_split` | Bass→intensity, treble→hue (classic DMX-style mapping) |
 | `breathing` | Locked color, subtle hue shift, soft intensity pulse |
 | `music_color` | All on, color from spectrum |
 | `front_to_back` / `back_to_front` | Wave across zones |

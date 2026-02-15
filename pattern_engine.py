@@ -23,6 +23,9 @@ class Pattern(Enum):
     LEFT_OFF = "left_off"
     RIGHT_OFF = "right_off"
     UPPER_BASS = "upper_bass"
+    BASS_FLOOD = "bass_flood"      # low freq drives brightness (flood lights)
+    TREBLE_HUE = "treble_hue"      # high freq drives hue shift
+    BAND_SPLIT = "band_split"      # bass→intensity, treble→hue (classic mapping)
     MUSIC_COLOR = "music_color"
     BREATHING = "breathing"
     ALL_ON = "all_on"
@@ -202,6 +205,19 @@ class PatternEngine:
             elif pattern == Pattern.UPPER_BASS:
                 # All lights pulse with upper bass (60-150 Hz)
                 intensity = 0.3 + 0.7 * (getattr(bands, "upper_bass", bands.low) if bands else 0.5)
+            elif pattern == Pattern.BASS_FLOOD:
+                # Low freq drives brightness, like flood lights (discovery: "low frequencies might drive brightness")
+                intensity = 0.2 + 0.8 * (bands.low if bands else 0.5)
+            elif pattern == Pattern.TREBLE_HUE:
+                # High freq drives hue; intensity from overall (discovery: "high frequencies control hue")
+                hue = 0.5 + 0.5 * (bands.high if bands else 0.5)
+                color = energy_to_color(1.0, hue)
+                intensity = 0.5 + 0.5 * (bands.overall if bands else 0.5)
+            elif pattern == Pattern.BAND_SPLIT:
+                # Bass→intensity, treble→hue (classic audio-driven mapping from discovery)
+                intensity = 0.3 + 0.7 * (bands.low if bands else 0.5)
+                hue = 0.5 + 0.5 * (bands.high if bands else 0.5)
+                color = energy_to_color(0.8, hue)
             elif pattern == Pattern.MUSIC_COLOR:
                 # All on, color from music
                 intensity = 0.5 + 0.5 * (bands.overall if bands else 0.5)
@@ -209,7 +225,7 @@ class PatternEngine:
                 intensity = 1.0
 
             # Boost intensity with bass for most patterns
-            no_bass_boost = (Pattern.LEFT_OFF, Pattern.RIGHT_OFF, Pattern.UPPER_BASS)
+            no_bass_boost = (Pattern.LEFT_OFF, Pattern.RIGHT_OFF, Pattern.UPPER_BASS, Pattern.BASS_FLOOD, Pattern.BAND_SPLIT)
             if bands and pattern not in no_bass_boost:
                 intensity = min(1.0, intensity * (0.7 + 0.3 * bands.low))
 
