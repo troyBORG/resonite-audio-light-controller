@@ -2,7 +2,13 @@
 
 Audio-reactive lighting for Resonite VR. Uses [ResoniteLink](https://github.com/Yellow-Dog-Man/ResoniteLink) to create and control FrooxEngine.Light components in real time. Define how many lights you want in each direction (left, right, front, back, top), and the program creates them in-world and drives them with patterns that react to music.
 
-**Status: In development.** Only tested on Linux. Windows/macOS may not work. Known quirks: system audio capture (speakers) on Linux can have latency or fall back to microphone if not configured correctly; see config for `audio_source: speakers` and `audio_pulse_source`.
+---
+
+# ⚠️ IN DEVELOPMENT ⚠️
+
+Linux-only tested. Windows/macOS untested. Some features may not work correctly.
+
+---
 
 ## What does this do?
 
@@ -16,7 +22,7 @@ The program captures audio, runs an FFT to get frequency bands (bass, mids, treb
 | **System audio / Spotify** | Route your output into a virtual input. Then use mic mode. Linux: PulseAudio monitor. Windows: Stereo Mix or VB-Audio Cable. macOS: BlackHole. |
 | **Audio file** | Set `audio_source: /path/to/file.wav` in optional config. Supports WAV/FLAC. Loops. |
 
-**You don't need the Resonance mod** – This program does its own FFT on mic or file input and sends light updates via ResoniteLink. [Resonance](https://github.com/BlueCyro/Resonance) is different: it runs FFT inside Resonite on audio streams and outputs dynvars like `fft_stream_band_0` for ProtoFlux. We skip that and drive the lights directly.
+**You don't need the Resonance mod** – This program does its own FFT on mic or file input and sends light updates via ResoniteLink. [Resonance](https://github.com/BlueCyro/Resonance) is different: it runs FFT inside Resonite. We drive the lights directly.
 
 ## Features
 
@@ -44,14 +50,15 @@ The program captures audio, runs an FFT to get frequency bands (bass, mids, treb
 ## Usage
 
 ```bash
-# First test (no audio; prompts for port – patterns run on time only, no music reaction)
-python main.py --demo -p chase
-
-# Run with audio (prompts for ResoniteLink port; startup shows which input is used)
+# Run with audio (prompts for ResoniteLink port)
 python main.py
 
-# See which audio input device is used and list all input devices
-python main.py --list-devices
+# Demo mode (no audio, patterns only)
+python main.py --demo
+
+# Specific pattern: -p <name>  (see Patterns section below)
+python main.py -p chase
+python main.py -p zone_mix
 
 # Skip port prompt
 python main.py --port 27404
@@ -59,24 +66,8 @@ python main.py --port 27404
 # Interactive layout (prompt for light counts per zone)
 python main.py -i
 
-# Specific pattern
-python main.py -p chase
-python main.py -p chase_reverse
-python main.py -p swirl
-python main.py -p front_to_back
-python main.py -p back_to_front
-python main.py -p left_off
-python main.py -p right_off
-python main.py -p upper_bass
-python main.py -p bass_flood
-python main.py -p treble_hue
-python main.py -p band_split
-python main.py -p music_color
-python main.py -p breathing
-python main.py -p all_on
-
-# Demo mode (no audio, patterns only)
-python main.py --demo
+# List audio input devices
+python main.py --list-devices
 ```
 
 ## Config (optional)
@@ -88,7 +79,7 @@ Copy `config.example.yaml` to `config.yaml` only if you want to customize. Defau
 | `resonite_port` | ResoniteLink port (optional; prompted at startup if unset; or use `--port`) |
 | `parent_slot_id` | Slot ID to parent lights under (e.g. DJ booth). Omit for Root. |
 | `center` | `{x, y, z}` offset for all light positions (e.g. around DJ booth) |
-| `rotation_enabled` | Spin lights around Y axis |
+| `rotation_enabled` | Spin lights around Y axis (experimental, may not work) |
 | `rotation_speed` | Degrees per second (default 30) |
 | `rotation_audio_boost` | Boost rotation speed with bass |
 | `audio_source` | `speakers` (system output), `microphone`, or path to audio file |
@@ -109,6 +100,7 @@ Copy `config.example.yaml` to `config.yaml` only if you want to customize. Defau
 | `treble_hue` | High freq drives hue, overall drives intensity |
 | `band_split` | Bass→intensity, treble→hue (classic DMX-style mapping) |
 | `breathing` | Locked color, subtle hue shift, soft intensity pulse |
+| `all_on` | All lights fully on (no audio reaction) |
 | `music_color` | All on, color from spectrum |
 | `front_to_back` / `back_to_front` | Wave across zones |
 | `left_off` / `right_off` | Half room on, half off |
@@ -122,5 +114,3 @@ Copy `config.example.yaml` to `config.yaml` only if you want to customize. Defau
 - **Light component**: Uses `[FrooxEngine]FrooxEngine.Light` with `LightType=0` (Point). Color is `colorX` (r,g,b,a) per ResoniteLink.
 - **DynamicVariableSpace**: Each session creates an `AudioLights` space for organization; lights are named `Light_{zone}_{index}`.
 - **Positioning**: Use `parent_slot_id` to place lights under a DJ booth; use `center` to offset all zones.
-- **Rotation**: Set `rotation_enabled: true` to spin lights; rotation is sent via `updateSlot` each frame.
-- **ProtoFlux**: We drive lights directly via ResoniteLink. ProtoFlux creation from external tools is exploratory; see `docs/PROTOFLUX.md`.
