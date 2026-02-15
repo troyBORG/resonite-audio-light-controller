@@ -12,13 +12,13 @@ The program captures audio, runs an FFT to get frequency bands (bass, mids, treb
 |--------|--------------|
 | **Microphone** | Default. Captures from your default recording device. |
 | **System audio / Spotify** | Route your output into a virtual input. Then use mic mode. Linux: PulseAudio monitor. Windows: Stereo Mix or VB-Audio Cable. macOS: BlackHole. |
-| **Audio file** | Set `audio_source: /path/to/file.wav` in config. Supports WAV/FLAC. Loops. |
+| **Audio file** | Set `audio_source: /path/to/file.wav` in optional config. Supports WAV/FLAC. Loops. |
 
 **You don't need the Resonance mod** – This program does its own FFT on mic or file input and sends light updates via ResoniteLink. [Resonance](https://github.com/BlueCyro/Resonance) is different: it runs FFT inside Resonite on audio streams and outputs dynvars like `fft_stream_band_0` for ProtoFlux. We skip that and drive the lights directly.
 
 ## Features
 
-- **Layout by zone** – Specify light counts per direction (e.g. 5 left, 5 right, 3 front, 2 back, 4 top)
+- **Layout by zone** – Specify light counts per direction (e.g. 5 left, 5 right, 3 front, 2 back, 4 top) via config or `-i` interactive prompt
 - **Patterns** – Chase (with tail), front-to-back wave, left-off (left dark, right on), music-color (all on, color from audio), all-on
 - **Audio-reactive** – FFT on mic or audio file; bass drives intensity, mids/treble drive hue
 - **ResoniteLink** – Creates PointLights in Resonite via WebSocket and updates Color/Intensity in real time
@@ -34,22 +34,23 @@ The program captures audio, runs an FFT to get frequency bands (bass, mids, treb
    ```
 
 2. **Enable ResoniteLink in Resonite**  
-   In Resonite, enable the ResoniteLink WebSocket server (typically `ws://localhost:27404/ResoniteLink`).
+   In Resonite, host a world and enable ResoniteLink. Note the port (changes each session).
 
-3. **Configure**
-
-   ```bash
-   cp config.example.yaml config.yaml
-   # Edit config.yaml: layout, audio_source, resonite_url
-   ```
+3. **Run** – No config required. The program asks for the ResoniteLink port when you start. See [docs/TESTING.md](docs/TESTING.md) for first-run steps (venv, Arch deps).
 
 ## Usage
 
 ```bash
-# Run with config file
+# First test (no audio; prompts for port)
+python main.py --demo -p chase
+
+# Run with audio (prompts for ResoniteLink port)
 python main.py
 
-# Interactive layout (prompt for light counts)
+# Skip port prompt
+python main.py --port 27404
+
+# Interactive layout (prompt for light counts per zone)
 python main.py -i
 
 # Specific pattern
@@ -72,11 +73,13 @@ python main.py -p all_on
 python main.py --demo
 ```
 
-## Config
+## Config (optional)
+
+Copy `config.example.yaml` to `config.yaml` only if you want to customize. Defaults work without it.
 
 | Option | Description |
 |--------|--------------|
-| `resonite_port` | ResoniteLink port (optional; prompted at startup if unset) |
+| `resonite_port` | ResoniteLink port (optional; prompted at startup if unset; or use `--port`) |
 | `parent_slot_id` | Slot ID to parent lights under (e.g. DJ booth). Omit for Root. |
 | `center` | `{x, y, z}` offset for all light positions (e.g. around DJ booth) |
 | `rotation_enabled` | Spin lights around Y axis |
