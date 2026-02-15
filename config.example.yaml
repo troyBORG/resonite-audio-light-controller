@@ -1,7 +1,7 @@
 # Resonite Audio Light Controller Configuration
 
-# ResoniteLink WebSocket URL (enable ResoniteLink in Resonite first)
-resonite_url: "ws://localhost:27404/ResoniteLink"
+# ResoniteLink port - asked at startup if not set. Only the world host runs ResoniteLink (localhost).
+# resonite_port: 27404
 
 # Parent slot for lights (e.g. DJ booth slot ID). Omit or null to parent under Root.
 # parent_slot_id: "Reso_XXXX"

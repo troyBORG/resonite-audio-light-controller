@@ -76,7 +76,7 @@ python main.py --demo
 
 | Option | Description |
 |--------|--------------|
-| `resonite_url` | ResoniteLink WebSocket URL |
+| `resonite_port` | ResoniteLink port (optional; prompted at startup if unset) |
 | `parent_slot_id` | Slot ID to parent lights under (e.g. DJ booth). Omit for Root. |
 | `center` | `{x, y, z}` offset for all light positions (e.g. around DJ booth) |
 | `rotation_enabled` | Spin lights around Y axis |

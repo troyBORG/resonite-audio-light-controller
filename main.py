@@ -40,6 +40,7 @@ async def run(
     pattern_name: str | None = None,
     layout_override: dict | None = None,
     demo: bool = False,
+    port_override: str | None = None,
 ) -> None:
     layout = LightLayout.from_dict(layout_override or config.get("layout") or {})
     total = layout.total_lights()
@@ -62,7 +63,15 @@ async def run(
     sample_rate = config.get("sample_rate", 44100)
     fft_size = config.get("fft_size", 2048)
     audio_source_cfg = config.get("audio_source", "microphone")
-    resonite_url = config.get("resonite_url", "ws://localhost:27404/ResoniteLink")
+
+    # ResoniteLink port changes each session - prompt if not set
+    port = port_override or config.get("resonite_port")
+    if port is None:
+        try:
+            port = input("ResoniteLink port (from Resonite): ").strip() or "27404"
+        except EOFError:
+            port = "27404"
+    resonite_url = f"ws://localhost:{port}/ResoniteLink"
 
     print(f"Layout: {total} lights (L{layout.left} R{layout.right} F{layout.front} B{layout.back} T{layout.top})")
     print(f"Pattern: {pattern.value}")
@@ -154,6 +163,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Resonite Audio Light Controller")
     parser.add_argument("--config", "-c", help="Config file path")
     parser.add_argument("--pattern", "-p", choices=[p.value for p in Pattern], help="Pattern to run")
+    parser.add_argument("--port", type=str, help="ResoniteLink port (skips prompt)")
     parser.add_argument("--interactive", "-i", action="store_true", help="Interactive layout setup")
     parser.add_argument("--demo", action="store_true", help="Run without audio (patterns only)")
     args = parser.parse_args()
@@ -168,6 +178,7 @@ def main() -> None:
         pattern_name=args.pattern,
         layout_override=layout_override,
         demo=args.demo,
+        port_override=args.port,
     ))
 
 
