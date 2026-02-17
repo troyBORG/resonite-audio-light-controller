@@ -1,35 +1,27 @@
 #!/usr/bin/env python3
 """
-Resonite Audio Light Controller
+Resonite Light Controller (pattern-only)
 
-Run the program, type in your light layout (left, right, front, etc.),
-and control lights in Resonite with audio-reactive patterns.
+Pick a pattern, control lights in Resonite. Change patterns in real time by
+typing a number (1–18) and Enter. No audio capture.
 """
 
 import argparse
 import asyncio
+import queue
 import sys
+import threading
 from pathlib import Path
 
 import yaml
 
-from audio_engine import fft_frequency_bands
-from audio_source import (
-    MicrophoneSource,
-    FileSource,
-    PulseSource,
-    find_monitor_of_output,
-    get_default_input_device_index,
-    get_default_input_device_name,
-    get_default_output_device_index,
-    get_default_output_device_name,
-    list_input_devices,
-    list_output_devices,
-    pulse_source_available,
-)
 from light_layout import LightLayout
 from pattern_engine import Pattern, PatternEngine
 from resonite_client import ResoniteClient
+
+
+# Number → pattern for keyboard switching (1–18)
+PATTERNS_BY_NUM: dict[int, Pattern] = {i: p for i, p in enumerate(list(Pattern), start=1)}
 
 
 def load_config(path: str | None = None) -> dict:
@@ -42,16 +34,26 @@ def load_config(path: str | None = None) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def parse_layout(config: dict) -> LightLayout:
-    layout = config.get("layout") or {}
-    return LightLayout.from_dict(layout)
+def run_input_thread(pattern_queue: queue.Queue, stop_event: threading.Event) -> None:
+    """Read stdin; on number + Enter, put pattern number in queue."""
+    while not stop_event.is_set():
+        try:
+            line = input()
+        except (EOFError, KeyboardInterrupt):
+            break
+        n = line.strip()
+        if n.isdigit():
+            num = int(n)
+            if 1 <= num <= len(PATTERNS_BY_NUM):
+                pattern_queue.put(num)
+            else:
+                print(f"  Use 1–{len(PATTERNS_BY_NUM)}")
 
 
 async def run(
     config: dict,
     pattern_name: str | None = None,
     layout_override: dict | None = None,
-    demo: bool = False,
     port_override: str | None = None,
 ) -> None:
     layout = LightLayout.from_dict(layout_override or config.get("layout") or {})
@@ -72,23 +74,9 @@ async def run(
     rotation_enabled = config.get("rotation_enabled", False)
     rotation_speed = float(config.get("rotation_speed", 30))
     rotation_audio_boost = config.get("rotation_audio_boost", True)
-    sample_rate = config.get("sample_rate", 44100)
-    fft_size = config.get("fft_size", 2048)
-    audio_source_cfg = config.get("audio_source", "microphone")
-    audio_device = config.get("audio_device")
-    audio_monitor_output = config.get("audio_monitor_output")
-    audio_pulse_source = config.get("audio_pulse_source")
-    if audio_monitor_output:
-        monitor_idx = find_monitor_of_output(str(audio_monitor_output))
-        if monitor_idx is not None:
-            audio_device = monitor_idx
-        else:
-            print(
-                f"Warning: no monitor found for output '{audio_monitor_output}'. "
-                "Run --list-devices and look for 'Monitor of ...'. Using audio_device."
-            )
+    zone_mix_sets = config.get("zone_mix_sets")
+    zone_cycle_seconds = float(config.get("zone_cycle_seconds", 14))
 
-    # ResoniteLink port changes each session - prompt if not set
     port = port_override or config.get("resonite_port")
     if port is None:
         try:
@@ -123,51 +111,6 @@ async def run(
         await client.disconnect()
         sys.exit(1)
 
-    # Audio source (skip if demo mode)
-    # speakers = capture from system output (requires audio_pulse_source)
-    # microphone = capture from mic
-    # path = capture from file
-    use_speakers = (
-        (isinstance(audio_source_cfg, str) and audio_source_cfg.lower() == "speakers")
-        or audio_pulse_source
-    )
-    audio = None
-    chunk_size = fft_size
-    if not demo:
-        if use_speakers:
-            if not audio_pulse_source:
-                print(
-                    "audio_source: speakers requires audio_pulse_source. "
-                    "Run: pactl list sources short"
-                )
-                await client.teardown()
-                await client.disconnect()
-                sys.exit(1)
-            if pulse_source_available():
-                audio = PulseSource(str(audio_pulse_source), sample_rate, chunk_size)
-            else:
-                print("audio_pulse_source is set but neither 'pw-record' nor 'ffmpeg' found. Install pipewire or ffmpeg.")
-                await client.teardown()
-                await client.disconnect()
-                sys.exit(1)
-        elif isinstance(audio_source_cfg, str) and audio_source_cfg.lower() == "microphone":
-            audio = MicrophoneSource(sample_rate, chunk_size, device=audio_device)
-        else:
-            audio = FileSource(str(audio_source_cfg), sample_rate, chunk_size)
-        try:
-            audio.start()
-        except Exception as e:
-            print(f"Failed to start audio: {e}")
-            await client.teardown()
-            await client.disconnect()
-            sys.exit(1)
-        kind = "pulse" if isinstance(audio, PulseSource) else "microphone" if isinstance(audio, MicrophoneSource) else "file"
-        print(f"Audio: {kind} ({audio.get_input_description()})")
-    else:
-        print("Audio: none (demo mode – no music reaction; run without --demo for audio-reactive lights)")
-
-    zone_mix_sets = config.get("zone_mix_sets")
-    zone_cycle_seconds = float(config.get("zone_cycle_seconds", 14))
     pattern_engine = PatternEngine(
         layout,
         chase_tail=chase_tail,
@@ -179,29 +122,61 @@ async def run(
     )
     interval = 1.0 / update_rate
 
-    print("Running. Press Ctrl+C to stop.")
+    pattern_queue: queue.Queue[int] = queue.Queue()
+    stop_event = threading.Event()
+    input_thread = threading.Thread(target=run_input_thread, args=(pattern_queue, stop_event), daemon=True)
+    input_thread.start()
+
+    print()
+    print("Type a number (1–18) + Enter to switch pattern. Ctrl+C to stop and clean up.")
+    print("  1=chase 2=chase_reverse 3=swirl 4=front_to_back 5=back_to_front")
+    print("  6=left_off 7=right_off 8=left_right_alt 9=center_out 10=upper_bass")
+    print("  11=bass_flood 12=treble_hue 13=band_split 14=music_color 15=breathing")
+    print("  16=all_on 17=zone_mix 18=beat_hue")
+    print()
+
+    interrupted = False
 
     try:
         while True:
             loop_start = asyncio.get_running_loop().time()
-            if audio:
-                samples = audio.read()
-                bands = fft_frequency_bands(samples, sample_rate, fft_size)
-            else:
-                bands = None  # demo: no audio
-            states = pattern_engine.compute(pattern, bands)
+
+            # Check for pattern switch
+            try:
+                while True:
+                    num = pattern_queue.get_nowait()
+                    if num in PATTERNS_BY_NUM:
+                        pattern = PATTERNS_BY_NUM[num]
+                        print(f"→ {pattern.value}")
+            except queue.Empty:
+                pass
+
+            states = pattern_engine.compute(pattern, None)
             await client.update_lights(states)
 
             elapsed = asyncio.get_running_loop().time() - loop_start
             await asyncio.sleep(max(0, interval - elapsed))
     except KeyboardInterrupt:
-        pass
+        interrupted = True
     finally:
-        if audio:
-            audio.stop()
-        await client.teardown()
-        await client.disconnect()
-        print("Stopped.")
+        stop_event.set()
+
+        # Clean up world (with timeout so we don't hang)
+        try:
+            await asyncio.wait_for(client.teardown(), timeout=5.0)
+        except asyncio.TimeoutError:
+            print("Teardown timed out (lights may remain in world)")
+        except Exception as e:
+            print(f"Teardown error: {e}")
+
+        try:
+            await asyncio.wait_for(client.disconnect(), timeout=3.0)
+        except asyncio.TimeoutError:
+            pass
+        except Exception:
+            pass
+
+        print("Stopped." if interrupted else "")
 
 
 def interactive_layout() -> dict:
@@ -219,54 +194,12 @@ def interactive_layout() -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Resonite Audio Light Controller")
+    parser = argparse.ArgumentParser(description="Resonite Light Controller (pattern-only)")
     parser.add_argument("--config", "-c", help="Config file path")
-    parser.add_argument("--pattern", "-p", choices=[p.value for p in Pattern], help="Pattern to run")
+    parser.add_argument("--pattern", "-p", choices=[p.value for p in Pattern], help="Initial pattern")
     parser.add_argument("--port", type=str, help="ResoniteLink port (skips prompt)")
     parser.add_argument("--interactive", "-i", action="store_true", help="Interactive layout setup")
-    parser.add_argument("--demo", action="store_true", help="Run without audio (patterns only)")
-    parser.add_argument(
-        "--list-devices",
-        action="store_true",
-        help="List audio input devices and exit (use with config: audio_device: <index>)",
-    )
-    parser.add_argument(
-        "--list-output-devices",
-        action="store_true",
-        help="List audio output devices (speakers, DAC, HDMI). To capture from an output, use its monitor in --list-devices.",
-    )
     args = parser.parse_args()
-
-    if args.list_output_devices:
-        default_idx = get_default_output_device_index()
-        default_name = get_default_output_device_name()
-        print("Audio output devices (speakers, DAC, HDMI):")
-        if default_idx is not None:
-            print(f"  Current default: index {default_idx} ({default_name})")
-        else:
-            print("  Current default: (system default)")
-        print()
-        for idx, name in list_output_devices():
-            mark = "  ← default" if idx == default_idx else ""
-            print(f"  {idx}: {name}{mark}")
-        print()
-        print("To capture from an output, use an INPUT that monitors it (e.g. 'Monitor of ...').")
-        print("Run --list-devices to see inputs; set audio_device to the monitor's index.")
-        return
-
-    if args.list_devices:
-        default_idx = get_default_input_device_index()
-        default_name = get_default_input_device_name()
-        print("Audio input devices (use audio_device: <index> in config to choose):")
-        if default_idx is not None:
-            print(f"  Current default: index {default_idx} ({default_name})")
-        else:
-            print("  Current default: (system default)")
-        print()
-        for idx, name in list_input_devices():
-            mark = "  ← default" if idx == default_idx else ""
-            print(f"  {idx}: {name}{mark}")
-        return
 
     config = load_config(args.config)
     layout_override = None
@@ -277,7 +210,6 @@ def main() -> None:
         config,
         pattern_name=args.pattern,
         layout_override=layout_override,
-        demo=args.demo,
         port_override=args.port,
     ))
 
